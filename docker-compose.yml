@@ -1,0 +1,97 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: fathom_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: fathompassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  credential-service:
+    build: ./services/credential-service
+    ports:
+      - "3001:3001"
+    environment:
+      PORT: 3001
+      DB_HOST: postgres
+      DB_NAME: fathom_db
+      DB_USER: postgres
+      DB_PASSWORD: fathompassword
+      JWT_SECRET: your-super-secret-key
+      FRONTEND_URL: http://localhost:3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  lms-service:
+    build: ./services/lms-service
+    ports:
+      - "3002:3002"
+    environment:
+      PORT: 3002
+      DB_HOST: postgres
+      DB_NAME: fathom_db
+      DB_USER: postgres
+      DB_PASSWORD: fathompassword
+      CREDENTIAL_SERVICE_URL: http://credential-service:3001
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: us-east-1
+      S3_BUCKET_NAME: fathom-training-materials
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  wellbeing-service:
+    build: ./services/wellbeing-service
+    ports:
+      - "3003:3003"
+    environment:
+      PORT: 3003
+      DB_HOST: postgres
+      DB_NAME: fathom_db
+      DB_USER: postgres
+      DB_PASSWORD: fathompassword
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  ai-service:
+    build: ./services/ai-service
+    ports:
+      - "3004:3004"
+    environment:
+      PORT: 3004
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "3000:80"
+    environment:
+      REACT_APP_CREDENTIAL_SERVICE_URL: http://localhost:3001
+      REACT_APP_LMS_SERVICE_URL: http://localhost:3002
+      REACT_APP_WELLBEING_SERVICE_URL: http://localhost:3003
+      REACT_APP_AI_SERVICE_URL: http://localhost:3004
+    depends_on:
+      - credential-service
+      - lms-service
+      - wellbeing-service
+      - ai-service
+
+volumes:
+  postgres_data:
